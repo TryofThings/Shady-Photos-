@@ -63,6 +63,7 @@
       border-radius: 8px;
       cursor: pointer;
       loading: lazy;
+      display: block; /* To prevent extra space below images/videos */
     }
     .item-info {
       position: absolute;
@@ -74,8 +75,14 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      box-sizing: border-box; /* Include padding in width */
     }
-    .item-info button {
+    .item-info button, .item-info a {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.2em;
+      cursor: pointer;
       margin-left: 10px;
     }
     .lightbox {
@@ -93,6 +100,12 @@
     .lightbox-content {
       max-width: 90%;
       max-height: 90%;
+      object-fit: contain; /* Ensure image/video scales properly */
+    }
+    .lightbox-content img, .lightbox-content video {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
     }
     .favorites-page {
       display: none;
@@ -107,6 +120,10 @@
       padding: 10px;
       border-radius: 50%;
       cursor: pointer;
+      font-size: 1.5rem;
+      line-height: 1;
+      text-align: center;
+      z-index: 999;
     }
     .tags {
       display: flex;
@@ -121,6 +138,17 @@
       border: none;
       border-radius: 20px;
       cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .tags button:hover {
+        background-color: #bbb;
+    }
+    body.dark .tags button {
+        background-color: #444;
+        color: #f4f4f4;
+    }
+    body.dark .tags button:hover {
+        background-color: #666;
     }
     .compact .gallery {
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -131,14 +159,29 @@
       height: 200px;
       animation: pulse 1.5s infinite;
     }
+    body.dark .skeleton {
+        background: #333;
+    }
     @keyframes pulse {
       0% { opacity: 0.6; }
       50% { opacity: 1; }
       100% { opacity: 0.6; }
     }
+    .no-results {
+        text-align: center;
+        width: 100%;
+        padding: 2rem;
+        font-size: 1.2rem;
+        color: #777;
+    }
     @media(max-width: 600px) {
       nav {
         flex-direction: column;
+        gap: 0.5rem;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
         gap: 0.5rem;
       }
     }
@@ -150,16 +193,16 @@
     <nav>
       <a href="#" onclick="showHome()">Home</a>
       <a href="#" onclick="showFavorites()">Favorites</a>
-      <button onclick="toggleDarkMode()">🌙</button>
+      <button onclick="toggleDarkMode()" aria-label="Toggle Dark Mode">🌙</button>
     </nav>
   </header>
   <div class="controls">
-    <input type="text" id="searchInput" placeholder="Search photos/videos..." oninput="autocompleteSearch()" />
-    <select id="typeSelect">
+    <input type="text" id="searchInput" placeholder="Search photos/videos..." oninput="autocompleteSearch()" aria-label="Search Photos or Videos" />
+    <select id="typeSelect" aria-label="Select Media Type">
       <option value="photo">Photos</option>
       <option value="video">Videos</option>
     </select>
-    <button onclick="searchMedia()">Search</button>
+    <button onclick="searchMedia()" aria-label="Search">Search</button>
   </div>
   <div class="tags">
     <button onclick="quickSearch('Nature')">Nature</button>
@@ -168,8 +211,12 @@
     <button onclick="quickSearch('Animals')">Animals</button>
   </div>
   <div class="settings">
-    <label><input type="checkbox" id="autoplayToggle" checked /> Autoplay Videos</label>
-    <label><input type="checkbox" id="compactView" onchange="toggleCompact()" /> Compact View</label>
+    <label>
+      <input type="checkbox" id="autoplayToggle" /> Autoplay Videos
+    </label>
+    <label>
+      <input type="checkbox" id="compactView" onchange="toggleCompact()" /> Compact View
+    </label>
     <button onclick="resetFavorites()">Reset Favorites</button>
   </div>
   <main class="gallery" id="gallery"></main>
@@ -177,115 +224,92 @@
   <div class="lightbox" id="lightbox" onclick="closeLightbox()">
     <div class="lightbox-content" id="lightboxContent"></div>
   </div>
-  <div class="back-to-top" onclick="scrollToTop()">⬆️</div>
+  <div class="back-to-top" onclick="scrollToTop()" aria-label="Back to Top">⬆️</div>
   <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
   <script>
-    const apiKey = 'gA503AsEZJORFqlTLCrSSj3HXq7n6V5yFo0IZq1nviq4sc1CDfZ4ELCx';
+    const apiKey = 'gA503AsEZJORFqlTLCrSSj3HXq7n6V5yFo0IZq1nviq4sc1CDfZ4ELCx'; // Replace with your actual Pexels API key
     let currentPage = 1, query = 'trending', mediaType = 'photo', isFetching = false;
+    let currentSearchTerm = ''; // To keep track of the last successful search term
+
+    // DOM Elements
     const gallery = document.getElementById('gallery');
     const favorites = document.getElementById('favorites');
     const lightbox = document.getElementById('lightbox');
     const lightboxContent = document.getElementById('lightboxContent');
+    const searchInput = document.getElementById('searchInput');
+    const typeSelect = document.getElementById('typeSelect');
+    const autoplayToggle = document.getElementById('autoplayToggle');
+    const compactViewToggle = document.getElementById('compactView');
+    const backToTopButton = document.querySelector('.back-to-top');
+
+    // --- Utility Functions ---
+
+    function showToast(msg, type = 'success') {
+      const backgroundColor = type === 'error' ? '#d32f2f' : '#333';
+      Toastify({ text: msg, duration: 2000, gravity: 'bottom', backgroundColor: backgroundColor }).showToast();
+    }
 
     function toggleDarkMode() {
       document.body.classList.toggle('dark');
+      localStorage.setItem('darkMode', document.body.classList.contains('dark'));
     }
+
     function showHome() {
       gallery.style.display = 'grid';
       favorites.style.display = 'none';
     }
+
     function showFavorites() {
       gallery.style.display = 'none';
       favorites.style.display = 'grid';
       displayFavorites();
     }
-    function openLightbox(content) {
-      lightboxContent.innerHTML = content;
+
+    function openLightbox(contentHtml) {
+      lightboxContent.innerHTML = contentHtml;
       lightbox.style.display = 'flex';
+      lightbox.focus(); // Set focus to lightbox for accessibility
     }
+
     function closeLightbox() {
       lightbox.style.display = 'none';
+      lightboxContent.innerHTML = ''; // Clear content
     }
+
     function scrollToTop() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
     function toggleCompact() {
       document.body.classList.toggle('compact');
+      localStorage.setItem('compactView', compactViewToggle.checked);
     }
-    function showToast(msg) {
-      Toastify({ text: msg, duration: 2000, gravity: 'bottom', backgroundColor: '#333' }).showToast();
-    }
+
     function resetFavorites() {
       localStorage.removeItem('pexelsFavorites');
       showToast('Favorites reset.');
-      displayFavorites();
+      displayFavorites(); // Refresh favorites display
     }
-    function searchMedia(reset = true) {
-      if (reset) {
-        gallery.innerHTML = ''; currentPage = 1;
-      }
-      query = document.getElementById('searchInput').value;
-      mediaType = document.getElementById('typeSelect').value;
-      const endpoint = mediaType === 'photo' ? 'https://api.pexels.com/v1/search' : 'https://api.pexels.com/videos/search';
-      isFetching = true;
-      fetch(`${endpoint}?query=${query}&per_page=10&page=${currentPage}`, {
-        headers: { Authorization: apiKey }
-      })
-      .then(res => res.json())
-      .then(data => {
-        const items = mediaType === 'photo' ? data.photos : data.videos;
-        if (items.length === 0) return;
-        items.forEach(item => {
-          const src = mediaType === 'photo' ? item.src.large : item.video_files[0].link;
-          const photographer = mediaType === 'photo' ? item.photographer : item.user.name;
-          const views = incrementViews(src);
-          const content = document.createElement('div');
-          content.className = 'item';
-          content.innerHTML = `
-            ${mediaType === 'photo'
-              ? `<img src="${src}" onclick="openLightbox('<img src=\'${src}\' />')">`
-              : `<video src="${src}" ${document.getElementById('autoplayToggle').checked ? 'autoplay loop' : ''} controls onclick="event.stopPropagation(); openLightbox('<video src=\'${src}\' controls autoplay loop></video>')"></video>`}
-            <div class="item-info">
-              <p>${photographer} | 👁️ ${views}</p>
-              <div>
-                <button onclick="saveFavorite('${src}', '${photographer}', '${mediaType}')">❤️</button>
-                <a href="${src}" download target="_blank">⬇️</a>
-              </div>
-            </div>
-          `;
-          gallery.appendChild(content);
-        });
-        currentPage++;
-        isFetching = false;
-      });
+
+    function incrementViews(src) {
+      const views = JSON.parse(localStorage.getItem('pexelsViews')) || {};
+      views[src] = (views[src] || 0) + 1;
+      localStorage.setItem('pexelsViews', JSON.stringify(views));
+      return views[src];
     }
-    function saveFavorite(src, photographer, type) {
+
+    function saveFavorite(src, photographer, type, alt = '') {
       let favs = JSON.parse(localStorage.getItem('pexelsFavorites')) || [];
-      favs.push({ src, photographer, type });
-      localStorage.setItem('pexelsFavorites', JSON.stringify(favs));
-      showToast('Saved to favorites!');
+      // Prevent duplicates
+      if (!favs.some(fav => fav.src === src)) {
+        favs.push({ src, photographer, type, alt });
+        localStorage.setItem('pexelsFavorites', JSON.stringify(favs));
+        showToast('Saved to favorites!');
+      } else {
+        showToast('Already in favorites!', 'info');
+      }
     }
-    function displayFavorites() {
-      favorites.innerHTML = '';
-      const favs = JSON.parse(localStorage.getItem('pexelsFavorites')) || [];
-      favs.forEach((item, index) => {
-        const content = document.createElement('div');
-        content.className = 'item';
-        content.innerHTML = `
-          ${item.type === 'photo'
-            ? `<img src="${item.src}" onclick="openLightbox('<img src=\'${item.src}\' />')">`
-            : `<video src="${item.src}" controls onclick="event.stopPropagation(); openLightbox('<video src=\'${item.src}\' controls autoplay loop></video>')"></video>`}
-          <div class="item-info">
-            <p>${item.photographer}</p>
-            <div>
-              <button onclick="deleteFavorite(${index})">🗑️</button>
-              <a href="${item.src}" download target="_blank">⬇️</a>
-            </div>
-          </div>
-        `;
-        favorites.appendChild(content);
-      });
-    }
+
     function deleteFavorite(index) {
       let favs = JSON.parse(localStorage.getItem('pexelsFavorites')) || [];
       favs.splice(index, 1);
@@ -293,26 +317,154 @@
       showToast('Deleted from favorites.');
       displayFavorites();
     }
-    function incrementViews(src) {
-      const views = JSON.parse(localStorage.getItem('pexelsViews')) || {};
-      views[src] = (views[src] || 0) + 1;
-      localStorage.setItem('pexelsViews', JSON.stringify(views));
-      return views[src];
-    }
+
     function quickSearch(tag) {
-      document.getElementById('searchInput').value = tag;
+      searchInput.value = tag;
       searchMedia();
     }
-    function autocompleteSearch() {
-      // Placeholder for autocomplete using Pexels trending terms
+
+    // --- Search & Display Functions ---
+
+    function showSkeletons(count) {
+        gallery.innerHTML = Array(count).fill('<div class="item skeleton"></div>').join('');
     }
-    window.addEventListener('scroll', () => {
-      if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500 && !isFetching) {
-        searchMedia(false);
+
+    let searchTimeout;
+    function searchMedia(reset = true) {
+      clearTimeout(searchTimeout); // Clear any pending debounced calls
+      if (isFetching) return; // Prevent multiple simultaneous fetches
+
+      const newQuery = searchInput.value.trim();
+      const newMediaType = typeSelect.value;
+
+      if (reset) {
+        gallery.innerHTML = ''; // Clear existing items only on a new search
+        currentPage = 1;
+        query = newQuery || 'trending'; // Default to trending if search input is empty
+        mediaType = newMediaType;
+        currentSearchTerm = newQuery; // Store the current search term
+        showSkeletons(10); // Show initial skeletons
+      } else {
+        // For infinite scroll, ensure we are continuing the same search
+        if (newQuery !== currentSearchTerm || newMediaType !== mediaType) {
+            console.log("Scroll detected for a different search term or type. Not fetching more.");
+            return; // Don't fetch more if the search parameters changed
+        }
       }
-      document.querySelector('.back-to-top').style.display = window.scrollY > 300 ? 'block' : 'none';
+
+      const endpoint = mediaType === 'photo' ? 'https://api.pexels.com/v1/search' : 'https://api.pexels.com/videos/search';
+      const fetchUrl = `${endpoint}?query=${encodeURIComponent(query)}&per_page=15&page=${currentPage}`;
+
+      isFetching = true;
+
+      fetch(fetchUrl, {
+        headers: { Authorization: apiKey }
+      })
+      .then(res => {
+        if (!res.ok) {
+          if (res.status === 429) { // Too Many Requests
+            throw new Error('API rate limit exceeded. Please try again in a minute.');
+          }
+          throw new Error(`HTTP error! Status: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (reset) {
+          gallery.innerHTML = ''; // Clear skeletons after data arrives for a new search
+        }
+
+        const items = mediaType === 'photo' ? data.photos : data.videos;
+
+        if (items.length === 0 && reset) {
+          gallery.innerHTML = '<p class="no-results">No results found for your search.</p>';
+        } else if (items.length === 0 && !reset) {
+            // No more items to load on scroll
+            showToast("No more results to load.", "info");
+        }
+
+        items.forEach(item => {
+          const src = mediaType === 'photo' ? item.src.large : item.video_files.find(file => file.quality === 'sd' || file.quality === 'hd')?.link || item.video_files[0]?.link;
+          const photographer = mediaType === 'photo' ? item.photographer : item.user.name;
+          const altText = mediaType === 'photo' ? item.alt : `Video by ${item.user.name}`;
+          const views = incrementViews(src);
+
+          if (!src) return; // Skip if no valid source is found for video
+
+          const content = document.createElement('div');
+          content.className = 'item';
+          content.innerHTML = `
+            ${mediaType === 'photo'
+              ? `<img src="${src}" alt="${altText}" loading="lazy" onclick="openLightbox('<img src=\'${src}\' alt=\'${altText}\' loading=\'lazy\' />')">`
+              : `<video src="${src}" ${autoplayToggle.checked ? 'autoplay muted loop' : ''} controls loading="lazy" aria-label="${altText}" onclick="event.stopPropagation(); openLightbox('<video src=\'${src}\' controls autoplay loop muted aria-label=\'${altText}\'></video>')"></video>`}
+            <div class="item-info">
+              <p>${photographer} | 👁️ ${views}</p>
+              <div>
+                <button onclick="saveFavorite('${src}', '${photographer}', '${mediaType}', '${altText}')" aria-label="Add to Favorites">❤️</button>
+                <a href="${src}" download target="_blank" aria-label="Download Media">⬇️</a>
+              </div>
+            </div>
+          `;
+          gallery.appendChild(content);
+        });
+        currentPage++;
+      })
+      .catch(error => {
+        console.error('Error fetching media:', error);
+        if (reset) { // Clear skeletons on error for a new search
+            gallery.innerHTML = '';
+        }
+        showToast(`Error: ${error.message}`, 'error');
+      })
+      .finally(() => {
+        isFetching = false;
+      });
+    }
+
+    function autocompleteSearch() {
+      // Basic autocomplete idea using a small predefined list or local history
+      // For a real-world scenario with Pexels API, you might need a separate API endpoint
+      // for search suggestions, which Pexels currently doesn't directly offer.
+      // This is left as a placeholder for potential future enhancements.
+      // Example:
+      // const suggestions = ['Nature', 'Technology', 'People', 'Animals', 'City', 'Food'];
+      // const currentInput = searchInput.value.toLowerCase();
+      // const filteredSuggestions = suggestions.filter(s => s.toLowerCase().startsWith(currentInput));
+      // You would then display these suggestions (e.g., in a datalist or dropdown)
+    }
+
+    // --- Event Listeners ---
+
+    window.addEventListener('scroll', () => {
+      // Show/hide back-to-top button
+      backToTopButton.style.display = window.scrollY > 300 ? 'block' : 'none';
+
+      // Infinite scrolling
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      if (scrollTop + clientHeight >= scrollHeight - 500 && !isFetching && gallery.style.display !== 'none') {
+        searchMedia(false); // Fetch more on scroll, without resetting
+      }
     });
+
     document.addEventListener('DOMContentLoaded', () => {
+      // Load Dark Mode preference
+      if (localStorage.getItem('darkMode') === 'true') {
+        document.body.classList.add('dark');
+      }
+
+      // Load Autoplay Videos preference
+      autoplayToggle.checked = localStorage.getItem('autoplayVideos') === 'true';
+      autoplayToggle.addEventListener('change', () => {
+        localStorage.setItem('autoplayVideos', autoplayToggle.checked);
+      });
+
+      // Load Compact View preference
+      if (localStorage.getItem('compactView') === 'true') {
+        compactViewToggle.checked = true;
+        document.body.classList.add('compact');
+      }
+
+      // Initial media load (trending)
       searchMedia();
     });
   </script>
